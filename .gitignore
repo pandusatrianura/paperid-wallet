@@ -1,0 +1,46 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+build/
+
+# Test binary, coverage, and profiling files
+*.test
+*.out
+coverage.txt
+coverage.out
+*.pprof
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.coverage
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Environment files
+.env
+*.env
+*.env.*
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE and Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace

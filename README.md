@@ -76,6 +76,7 @@ paperid-wallet/
 ├── test/
 │   └── integration/
 │       └── disbursement_test.go                # End-to-end integration tests
+├── .gitignore                                  # Git ignore rules
 ├── go.mod                                      # Go module definition
 └── README.md                                   # Project documentation
 ```
