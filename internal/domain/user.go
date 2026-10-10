@@ -2,9 +2,9 @@ package domain
 
 // User represents the wallet account owner and balance entity.
 type User struct {
-	ID      string  `json:"id"`
-	Name    string  `json:"name"`
-	Balance float64 `json:"balance"`
+	ID      string
+	Name    string
+	Balance float64
 }
 
 // Deduct verifies and performs deduction on the user's balance.

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	deliveryHttp "paperid-wallet/internal/delivery/http"
+	httphandler "paperid-wallet/internal/delivery/http"
 	"paperid-wallet/internal/domain"
 	"paperid-wallet/internal/repository/inmemory"
 	"paperid-wallet/internal/usecase"
@@ -21,8 +21,8 @@ func setupTestRouter() http.Handler {
 	}
 	repo := inmemory.NewUserRepository(seedUsers)
 	uc := usecase.NewDisbursementUseCase(repo)
-	handler := deliveryHttp.NewDisburseHandler(uc)
-	return deliveryHttp.NewRouter(handler)
+	handler := httphandler.NewDisburseHandler(uc)
+	return httphandler.NewRouter(handler)
 }
 
 func TestDisbursement_EndToEnd_Scenarios(t *testing.T) {
@@ -42,6 +42,9 @@ func TestDisbursement_EndToEnd_Scenarios(t *testing.T) {
 		var resp map[string]interface{}
 		json.Unmarshal(rec.Body.Bytes(), &resp)
 
+		if resp["transaction_id"] == nil || resp["transaction_id"] == "" {
+			t.Errorf("expected valid transaction_id, got %v", resp["transaction_id"])
+		}
 		if resp["message"] != "Disbursement successful" {
 			t.Errorf("expected message 'Disbursement successful', got '%v'", resp["message"])
 		}

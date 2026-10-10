@@ -9,7 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	deliveryHttp "paperid-wallet/internal/delivery/http"
+	httphandler "paperid-wallet/internal/delivery/http"
 	"paperid-wallet/internal/domain"
 	"paperid-wallet/internal/usecase"
 )
@@ -31,13 +31,14 @@ func TestDisburseHandler(t *testing.T) {
 		mockUC := &mockDisbursementUseCase{
 			executeFunc: func(ctx context.Context, input usecase.DisburseInput) (*usecase.DisburseOutput, error) {
 				return &usecase.DisburseOutput{
+					TransactionID:    "TRX-TEST-123",
 					Message:          "Disbursement successful",
 					RemainingBalance: 4500.00,
 				}, nil
 			},
 		}
 
-		handler := deliveryHttp.NewDisburseHandler(mockUC)
+		handler := httphandler.NewDisburseHandler(mockUC)
 
 		body := []byte(`{"user_id":"U001","amount":500.00,"destination_bank":"BCA","destination_account":"123"}`)
 		req := httptest.NewRequest(http.MethodPost, "/api/disburse", bytes.NewBuffer(body))
@@ -54,6 +55,9 @@ func TestDisburseHandler(t *testing.T) {
 			t.Fatalf("failed to decode response: %v", err)
 		}
 
+		if resp["transaction_id"] != "TRX-TEST-123" {
+			t.Errorf("expected transaction_id 'TRX-TEST-123', got '%v'", resp["transaction_id"])
+		}
 		if resp["message"] != "Disbursement successful" {
 			t.Errorf("expected message 'Disbursement successful', got '%v'", resp["message"])
 		}
@@ -61,119 +65,90 @@ func TestDisburseHandler(t *testing.T) {
 			t.Errorf("expected remaining_balance 4500.00, got %v", resp["remaining_balance"])
 		}
 	})
+}
 
-	t.Run("returns 405 Method Not Allowed for non-POST requests", func(t *testing.T) {
-		mockUC := &mockDisbursementUseCase{}
-		handler := deliveryHttp.NewDisburseHandler(mockUC)
-
-		req := httptest.NewRequest(http.MethodGet, "/api/disburse", nil)
-		rec := httptest.NewRecorder()
-
-		handler.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusMethodNotAllowed {
-			t.Fatalf("expected status 405, got %d", rec.Code)
-		}
-
-		var resp map[string]interface{}
-		json.Unmarshal(rec.Body.Bytes(), &resp)
-		if resp["error"] != "Method not allowed" {
-			t.Errorf("expected error 'Method not allowed', got '%v'", resp["error"])
-		}
-	})
-
-	t.Run("returns 400 Bad Request for malformed JSON", func(t *testing.T) {
-		mockUC := &mockDisbursementUseCase{}
-		handler := deliveryHttp.NewDisburseHandler(mockUC)
-
-		req := httptest.NewRequest(http.MethodPost, "/api/disburse", bytes.NewBufferString("{invalid json"))
-		rec := httptest.NewRecorder()
-
-		handler.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("expected status 400, got %d", rec.Code)
-		}
-
-		var resp map[string]interface{}
-		json.Unmarshal(rec.Body.Bytes(), &resp)
-		if resp["error"] != "Invalid JSON payload" {
-			t.Errorf("expected error 'Invalid JSON payload', got '%v'", resp["error"])
-		}
-	})
-
-	t.Run("returns 400 Bad Request when amount is zero or negative", func(t *testing.T) {
-		mockUC := &mockDisbursementUseCase{
-			executeFunc: func(ctx context.Context, input usecase.DisburseInput) (*usecase.DisburseOutput, error) {
-				return nil, domain.ErrInvalidAmount
+func TestDisburseHandler_ErrorScenarios(t *testing.T) {
+	tests := []struct {
+		name           string
+		method         string
+		body           string
+		mockUC         usecase.DisbursementUseCase
+		expectedStatus int
+		expectedError  string
+	}{
+		{
+			name:           "method not allowed",
+			method:         http.MethodGet,
+			body:           "",
+			mockUC:         &mockDisbursementUseCase{},
+			expectedStatus: http.StatusMethodNotAllowed,
+			expectedError:  "Method not allowed",
+		},
+		{
+			name:           "malformed json payload",
+			method:         http.MethodPost,
+			body:           "{invalid json",
+			mockUC:         &mockDisbursementUseCase{},
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "Invalid JSON payload",
+		},
+		{
+			name:   "invalid amount error from usecase",
+			method: http.MethodPost,
+			body:   `{"user_id":"U001","amount":-50.00,"destination_bank":"BCA","destination_account":"123"}`,
+			mockUC: &mockDisbursementUseCase{
+				executeFunc: func(ctx context.Context, input usecase.DisburseInput) (*usecase.DisburseOutput, error) {
+					return nil, domain.ErrInvalidAmount
+				},
 			},
-		}
-		handler := deliveryHttp.NewDisburseHandler(mockUC)
-
-		body := []byte(`{"user_id":"U001","amount":-50.00,"destination_bank":"BCA","destination_account":"123"}`)
-		req := httptest.NewRequest(http.MethodPost, "/api/disburse", bytes.NewBuffer(body))
-		rec := httptest.NewRecorder()
-
-		handler.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("expected status 400, got %d", rec.Code)
-		}
-
-		var resp map[string]interface{}
-		json.Unmarshal(rec.Body.Bytes(), &resp)
-		if resp["error"] != "Amount must be greater than zero" {
-			t.Errorf("expected error 'Amount must be greater than zero', got '%v'", resp["error"])
-		}
-	})
-
-	t.Run("returns 404 Not Found when user is not found", func(t *testing.T) {
-		mockUC := &mockDisbursementUseCase{
-			executeFunc: func(ctx context.Context, input usecase.DisburseInput) (*usecase.DisburseOutput, error) {
-				return nil, domain.ErrUserNotFound
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "Amount must be greater than zero",
+		},
+		{
+			name:   "user not found",
+			method: http.MethodPost,
+			body:   `{"user_id":"UNKNOWN","amount":100.00,"destination_bank":"BCA","destination_account":"123"}`,
+			mockUC: &mockDisbursementUseCase{
+				executeFunc: func(ctx context.Context, input usecase.DisburseInput) (*usecase.DisburseOutput, error) {
+					return nil, domain.ErrUserNotFound
+				},
 			},
-		}
-		handler := deliveryHttp.NewDisburseHandler(mockUC)
-
-		body := []byte(`{"user_id":"UNKNOWN","amount":100.00,"destination_bank":"BCA","destination_account":"123"}`)
-		req := httptest.NewRequest(http.MethodPost, "/api/disburse", bytes.NewBuffer(body))
-		rec := httptest.NewRecorder()
-
-		handler.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusNotFound {
-			t.Fatalf("expected status 404, got %d", rec.Code)
-		}
-
-		var resp map[string]interface{}
-		json.Unmarshal(rec.Body.Bytes(), &resp)
-		if resp["error"] != "User not found" {
-			t.Errorf("expected error 'User not found', got '%v'", resp["error"])
-		}
-	})
-
-	t.Run("returns 422 Unprocessable Entity when balance is insufficient", func(t *testing.T) {
-		mockUC := &mockDisbursementUseCase{
-			executeFunc: func(ctx context.Context, input usecase.DisburseInput) (*usecase.DisburseOutput, error) {
-				return nil, domain.ErrInsufficientBalance
+			expectedStatus: http.StatusNotFound,
+			expectedError:  "User not found",
+		},
+		{
+			name:   "insufficient balance",
+			method: http.MethodPost,
+			body:   `{"user_id":"U002","amount":500.00,"destination_bank":"BCA","destination_account":"123"}`,
+			mockUC: &mockDisbursementUseCase{
+				executeFunc: func(ctx context.Context, input usecase.DisburseInput) (*usecase.DisburseOutput, error) {
+					return nil, domain.ErrInsufficientBalance
+				},
 			},
-		}
-		handler := deliveryHttp.NewDisburseHandler(mockUC)
+			expectedStatus: http.StatusUnprocessableEntity,
+			expectedError:  "Insufficient balance",
+		},
+	}
 
-		body := []byte(`{"user_id":"U002","amount":500.00,"destination_bank":"BCA","destination_account":"123"}`)
-		req := httptest.NewRequest(http.MethodPost, "/api/disburse", bytes.NewBuffer(body))
-		rec := httptest.NewRecorder()
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := httphandler.NewDisburseHandler(tc.mockUC)
+			req := httptest.NewRequest(tc.method, "/api/disburse", bytes.NewBufferString(tc.body))
+			rec := httptest.NewRecorder()
 
-		handler.ServeHTTP(rec, req)
+			handler.ServeHTTP(rec, req)
 
-		if rec.Code != http.StatusUnprocessableEntity {
-			t.Fatalf("expected status 422, got %d", rec.Code)
-		}
+			if rec.Code != tc.expectedStatus {
+				t.Fatalf("expected status %d, got %d", tc.expectedStatus, rec.Code)
+			}
 
-		var resp map[string]interface{}
-		json.Unmarshal(rec.Body.Bytes(), &resp)
-		if resp["error"] != "Insufficient balance" {
-			t.Errorf("expected error 'Insufficient balance', got '%v'", resp["error"])
-		}
-	})
+			var resp map[string]interface{}
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("failed to decode response: %v", err)
+			}
+			if resp["error"] != tc.expectedError {
+				t.Errorf("expected error '%s', got '%v'", tc.expectedError, resp["error"])
+			}
+		})
+	}
 }

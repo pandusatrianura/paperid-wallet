@@ -10,7 +10,8 @@ type DisburseRequest struct {
 
 // DisburseResponse defines the outgoing JSON payload.
 type DisburseResponse struct {
-	Message string  `json:"message,omitempty"`
-	Balance float64 `json:"remaining_balance,omitempty"`
-	Error   string  `json:"error,omitempty"`
+	TransactionID string  `json:"transaction_id,omitempty"`
+	Message       string  `json:"message,omitempty"`
+	Balance       float64 `json:"remaining_balance,omitempty"`
+	Error         string  `json:"error,omitempty"`
 }

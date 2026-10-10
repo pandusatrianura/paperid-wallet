@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	deliveryHttp "paperid-wallet/internal/delivery/http"
+	httphandler "paperid-wallet/internal/delivery/http"
 	"paperid-wallet/internal/domain"
 	"paperid-wallet/internal/repository/inmemory"
 	"paperid-wallet/internal/usecase"
@@ -26,21 +26,16 @@ type Application struct {
 	server *http.Server
 }
 
-// BuildApp wires together dependencies following Clean Architecture and SOLID principles.
+// BuildApp initializes application dependencies and returns an Application instance.
 func BuildApp(cfg Config) *Application {
-	// 1. Data Store / Repository Layer (with seed data)
 	seedUsers := map[string]*domain.User{
 		"U001": {ID: "U001", Name: "Alice", Balance: 5000.00},
 		"U002": {ID: "U002", Name: "Bob", Balance: 150.00},
 	}
 	userRepo := inmemory.NewUserRepository(seedUsers)
-
-	// 2. Use Case Layer
 	disburseUseCase := usecase.NewDisbursementUseCase(userRepo)
-
-	// 3. Delivery Layer (HTTP Handlers & Router)
-	disburseHandler := deliveryHttp.NewDisburseHandler(disburseUseCase)
-	router := deliveryHttp.NewRouter(disburseHandler)
+	disburseHandler := httphandler.NewDisburseHandler(disburseUseCase)
+	router := httphandler.NewRouter(disburseHandler)
 
 	port := cfg.Port
 	if port == "" {

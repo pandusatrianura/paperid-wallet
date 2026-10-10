@@ -7,17 +7,18 @@ import (
 	"paperid-wallet/internal/domain"
 )
 
-// UserRepository is an in-memory, thread-safe implementation of domain.UserRepository.
+// UserRepository provides a thread-safe, in-memory implementation of domain.UserRepository.
 type UserRepository struct {
-	mu    sync.RWMutex
-	users map[string]*domain.User
+	mu           sync.RWMutex
+	users        map[string]*domain.User
+	transactions map[string][]*domain.Transaction
 }
 
 // NewUserRepository initializes and returns a new in-memory UserRepository.
-// If initialData is provided, it is cloned into the repository's internal state.
 func NewUserRepository(initialData map[string]*domain.User) *UserRepository {
 	repo := &UserRepository{
-		users: make(map[string]*domain.User),
+		users:        make(map[string]*domain.User),
+		transactions: make(map[string][]*domain.Transaction),
 	}
 
 	for k, v := range initialData {
@@ -40,13 +41,12 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*domain.User, 
 		return nil, domain.ErrUserNotFound
 	}
 
-	// Defensive copy
 	userCopy := *user
 	return &userCopy, nil
 }
 
-// DeductBalance atomically verifies and deducts balance for a user under write lock.
-func (r *UserRepository) DeductBalance(ctx context.Context, id string, amount float64) (*domain.User, error) {
+// DeductBalance atomically verifies balance, deducts it, and records the transaction log.
+func (r *UserRepository) DeductBalance(ctx context.Context, id string, amount float64, tx *domain.Transaction) (*domain.User, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -59,7 +59,25 @@ func (r *UserRepository) DeductBalance(ctx context.Context, id string, amount fl
 		return nil, err
 	}
 
-	// Return copy of the updated state
+	if tx != nil {
+		txCopy := *tx
+		r.transactions[id] = append(r.transactions[id], &txCopy)
+	}
+
 	userCopy := *user
 	return &userCopy, nil
+}
+
+// GetTransactionsByUserID returns all recorded transactions for a user.
+func (r *UserRepository) GetTransactionsByUserID(ctx context.Context, userID string) ([]*domain.Transaction, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	txs := r.transactions[userID]
+	result := make([]*domain.Transaction, len(txs))
+	for i, tx := range txs {
+		txCopy := *tx
+		result[i] = &txCopy
+	}
+	return result, nil
 }

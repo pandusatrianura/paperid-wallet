@@ -2,23 +2,28 @@ package usecase
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"strings"
+	"time"
 
 	"paperid-wallet/internal/domain"
 )
 
 // DisburseInput represents the input data required to process a disbursement.
 type DisburseInput struct {
-	UserID             string  `json:"user_id"`
-	Amount             float64 `json:"amount"`
-	DestinationBank    string  `json:"destination_bank"`
-	DestinationAccount string  `json:"destination_account"`
+	UserID             string
+	Amount             float64
+	DestinationBank    string
+	DestinationAccount string
 }
 
 // DisburseOutput represents the result of a processed disbursement.
 type DisburseOutput struct {
-	Message          string  `json:"message"`
-	RemainingBalance float64 `json:"remaining_balance"`
+	TransactionID    string
+	Message          string
+	RemainingBalance float64
 }
 
 // DisbursementUseCase defines the contract for disbursement business operations.
@@ -26,7 +31,6 @@ type DisbursementUseCase interface {
 	Execute(ctx context.Context, input DisburseInput) (*DisburseOutput, error)
 }
 
-// disbursementUseCase implements DisbursementUseCase.
 type disbursementUseCase struct {
 	userRepo domain.UserRepository
 }
@@ -40,7 +44,6 @@ func NewDisbursementUseCase(userRepo domain.UserRepository) DisbursementUseCase 
 
 // Execute orchestrates the disbursement transaction.
 func (uc *disbursementUseCase) Execute(ctx context.Context, input DisburseInput) (*DisburseOutput, error) {
-	// Validate input
 	if strings.TrimSpace(input.UserID) == "" {
 		return nil, domain.ErrInvalidUserID
 	}
@@ -48,14 +51,30 @@ func (uc *disbursementUseCase) Execute(ctx context.Context, input DisburseInput)
 		return nil, domain.ErrInvalidAmount
 	}
 
-	// Atomically deduct user balance in storage
-	updatedUser, err := uc.userRepo.DeductBalance(ctx, input.UserID, input.Amount)
+	tx := &domain.Transaction{
+		ID:                 newTransactionID(),
+		UserID:             input.UserID,
+		Amount:             input.Amount,
+		DestinationBank:    input.DestinationBank,
+		DestinationAccount: input.DestinationAccount,
+		Status:             domain.TransactionStatusSuccess,
+		CreatedAt:          time.Now().UTC(),
+	}
+
+	updatedUser, err := uc.userRepo.DeductBalance(ctx, input.UserID, input.Amount, tx)
 	if err != nil {
 		return nil, err
 	}
 
 	return &DisburseOutput{
+		TransactionID:    tx.ID,
 		Message:          "Disbursement successful",
 		RemainingBalance: updatedUser.Balance,
 	}, nil
+}
+
+func newTransactionID() string {
+	b := make([]byte, 4)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("TRX-%d-%s", time.Now().Unix(), hex.EncodeToString(b))
 }

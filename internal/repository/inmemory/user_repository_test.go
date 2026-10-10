@@ -39,12 +39,21 @@ func TestUserRepository_GetByID(t *testing.T) {
 func TestUserRepository_DeductBalance(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("successfully deducts balance", func(t *testing.T) {
+	t.Run("successfully deducts balance and records transaction", func(t *testing.T) {
 		repo := inmemory.NewUserRepository(map[string]*domain.User{
 			"U001": {ID: "U001", Name: "Alice", Balance: 1000.00},
 		})
 
-		user, err := repo.DeductBalance(ctx, "U001", 300.00)
+		tx := &domain.Transaction{
+			ID:                 "TRX-001",
+			UserID:             "U001",
+			Amount:             300.00,
+			DestinationBank:    "BCA",
+			DestinationAccount: "123456",
+			Status:             domain.TransactionStatusSuccess,
+		}
+
+		user, err := repo.DeductBalance(ctx, "U001", 300.00, tx)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -52,17 +61,24 @@ func TestUserRepository_DeductBalance(t *testing.T) {
 			t.Errorf("expected remaining balance 700.00, got: %.2f", user.Balance)
 		}
 
-		// Verify state persisted in repo
 		persisted, _ := repo.GetByID(ctx, "U001")
 		if persisted.Balance != 700.00 {
 			t.Errorf("expected persisted balance 700.00, got: %.2f", persisted.Balance)
+		}
+
+		history, err := repo.GetTransactionsByUserID(ctx, "U001")
+		if err != nil {
+			t.Fatalf("expected no error fetching transactions: %v", err)
+		}
+		if len(history) != 1 || history[0].ID != "TRX-001" {
+			t.Errorf("expected 1 recorded transaction TRX-001, got: %+v", history)
 		}
 	})
 
 	t.Run("returns ErrUserNotFound when user does not exist", func(t *testing.T) {
 		repo := inmemory.NewUserRepository(nil)
 
-		_, err := repo.DeductBalance(ctx, "NON_EXISTENT", 100.00)
+		_, err := repo.DeductBalance(ctx, "NON_EXISTENT", 100.00, nil)
 		if err != domain.ErrUserNotFound {
 			t.Errorf("expected ErrUserNotFound, got: %v", err)
 		}
@@ -73,12 +89,12 @@ func TestUserRepository_DeductBalance(t *testing.T) {
 			"U001": {ID: "U001", Name: "Alice", Balance: 500.00},
 		})
 
-		_, err := repo.DeductBalance(ctx, "U001", 0)
+		_, err := repo.DeductBalance(ctx, "U001", 0, nil)
 		if err != domain.ErrInvalidAmount {
 			t.Errorf("expected ErrInvalidAmount, got: %v", err)
 		}
 
-		_, err = repo.DeductBalance(ctx, "U001", -50)
+		_, err = repo.DeductBalance(ctx, "U001", -50, nil)
 		if err != domain.ErrInvalidAmount {
 			t.Errorf("expected ErrInvalidAmount, got: %v", err)
 		}
@@ -89,7 +105,7 @@ func TestUserRepository_DeductBalance(t *testing.T) {
 			"U002": {ID: "U002", Name: "Bob", Balance: 150.00},
 		})
 
-		_, err := repo.DeductBalance(ctx, "U002", 200.00)
+		_, err := repo.DeductBalance(ctx, "U002", 200.00, nil)
 		if err != domain.ErrInsufficientBalance {
 			t.Errorf("expected ErrInsufficientBalance, got: %v", err)
 		}
@@ -115,7 +131,7 @@ func TestUserRepository_DeductBalance(t *testing.T) {
 		for i := 0; i < goroutinesCount; i++ {
 			go func() {
 				defer wg.Done()
-				_, err := repo.DeductBalance(ctx, "U_CONCURRENT", deductionAmount)
+				_, err := repo.DeductBalance(ctx, "U_CONCURRENT", deductionAmount, nil)
 				if err != nil {
 					t.Errorf("unexpected error in concurrent deduction: %v", err)
 				}
